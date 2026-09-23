@@ -47,27 +47,31 @@ class FingerCounter:
         self.max_leds = max_leds
 
     def is_thumb_raised(self, landmarks: list, handedness: str = "Right") -> bool:
-        """Determines if thumb is extended using joint distance and handedness."""
+        """Determines if thumb is extended away from palm."""
         if len(landmarks) < 21:
             return False
 
-        thumb_tip = landmarks[self.THUMB_TIP]
-        thumb_ip = landmarks[self.THUMB_IP]
-        pinky_mcp = landmarks[self.PINKY_MCP]
-        wrist = landmarks[self.WRIST]
+        thumb_tip = landmarks[self.THUMB_TIP]    # 4
+        thumb_ip = landmarks[self.THUMB_IP]      # 3
+        index_mcp = landmarks[self.INDEX_MCP]    # 5
+        pinky_mcp = landmarks[self.PINKY_MCP]    # 17
+        wrist = landmarks[self.WRIST]            # 0
 
+        # Palm reference size (Index MCP to Wrist)
+        palm_size = calculate_distance_2d(index_mcp, wrist)
+        if palm_size == 0:
+            return False
+
+        # Distance from Thumb Tip (4) to Index MCP (5)
+        thumb_index_dist = calculate_distance_2d(thumb_tip, index_mcp)
+        spread_ratio = thumb_index_dist / palm_size
+
+        # Distance from Thumb Tip to Pinky MCP vs Thumb IP to Pinky MCP
         dist_tip_pinky = calculate_distance_2d(thumb_tip, pinky_mcp)
         dist_ip_pinky = calculate_distance_2d(thumb_ip, pinky_mcp)
 
-        if handedness == "Right":
-            is_extended_x = thumb_tip["x"] < thumb_ip["x"]
-        else:
-            is_extended_x = thumb_tip["x"] > thumb_ip["x"]
-
-        dist_tip_wrist = calculate_distance_2d(thumb_tip, wrist)
-        dist_ip_wrist = calculate_distance_2d(thumb_ip, wrist)
-
-        return (dist_tip_pinky > dist_ip_pinky) or (dist_tip_wrist > dist_ip_wrist and is_extended_x)
+        # Thumb is raised ONLY if spread_ratio >= 0.80 AND tip is extended relative to pinky MCP
+        return (spread_ratio >= 0.80) and (dist_tip_pinky > dist_ip_pinky * 1.05)
 
     def is_finger_raised(self, landmarks: list, tip_idx: int, pip_idx: int) -> bool:
         """Determines if a non-thumb finger is raised."""
