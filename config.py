@@ -26,7 +26,7 @@ STABILIZER_WINDOW_SIZE = 5  # Sliding history window size in frames
 STABILIZER_THRESHOLD = 3    # Minimum frame consensus needed to accept count change
 
 # Hardware & LED Mapping Configuration
-MAX_LEDS = 10               # Total physical LED channels supported (expanded to 10)
+MAX_LEDS = 6                # 6 physical LED channels (GPIO D13, D12, D14, D27, D26, D25)
 DEFAULT_BRIGHTNESS = 100    # Default brightness percentage (0..100)
 ESP32_BASE_URL = "http://192.168.1.50"  # Microcontroller web server base URL
 REQUEST_TIMEOUT = 1.0       # HTTP GET request timeout in seconds

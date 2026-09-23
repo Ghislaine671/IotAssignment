@@ -2,13 +2,13 @@
  * ESP32 LED Controller Web Server with PWM Brightness Support
  * 
  * Class Assignment MVP: Hand Gesture Detection & LED Control System
- * Hardware Target: ESP32 Microcontroller + 10 LED Channels
+ * Hardware Target: ESP32 Microcontroller + 6 LED Channels (D13, D12, D14, D27, D26, D25)
  * Protocol: HTTP GET Server over Wi-Fi
  *
  * Endpoints:
  *   - GET /health                  : System health check
  *   - GET /status                  : Current LED state array, brightness %, & network status
- *   - GET /leds?count=N&brightness=B: Set first N LEDs ON (N in 0..10) with brightness B (0..100%)
+ *   - GET /leds?count=N&brightness=B: Set first N LEDs ON (N in 0..6) with brightness B (0..100%)
  */
 
 #include <WiFi.h>
@@ -21,9 +21,9 @@ const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 const int HTTP_PORT = 80;
 WebServer server(HTTP_PORT);
 
-// Physical ESP32 GPIO Pin definitions for 10 LED Channels
-const int NUM_LEDS = 10;
-const int LED_PINS[NUM_LEDS] = {13, 12, 14, 27, 26, 25, 33, 32, 15, 4};
+// Physical ESP32 GPIO Pin definitions for 6 LED Channels (D13, D12, D14, D27, D26, D25)
+const int NUM_LEDS = 6;
+const int LED_PINS[NUM_LEDS] = {13, 12, 14, 27, 26, 25};
 
 // System State
 int currentLedCount = 0;
@@ -44,7 +44,6 @@ void updateLedHardware(int count, int brightnessPct) {
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
     analogWrite(LED_PINS[i], state ? pwmValue : 0);
 #else
-    // Fallback digital write or analog write depending on core version
     digitalWrite(LED_PINS[i], state ? (pwmValue > 128 ? HIGH : LOW) : LOW);
 #endif
   }
@@ -94,7 +93,7 @@ void handleLeds() {
   }
 
   if (countVal < 0 || countVal > NUM_LEDS) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Count must be between 0 and 10\"}");
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Count must be between 0 and 6\"}");
     return;
   }
 
@@ -119,7 +118,7 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  Serial.println("\n=== ESP32 Hand Gesture 10-LED & Brightness Controller ===");
+  Serial.println("\n=== ESP32 Hand Gesture 6-LED & Brightness Controller ===");
 
   for (int i = 0; i < NUM_LEDS; i++) {
     pinMode(LED_PINS[i], OUTPUT);

@@ -1,7 +1,7 @@
 """Local Mock ESP32 HTTP Web Server.
 
 Simulates the physical ESP32 microcontroller endpoints (/health, /status, /leds?count=N&brightness=B)
-for 10 LED channels and PWM brightness percentage tracking.
+for 6 LED channels (GPIO D13, D12, D14, D27, D26, D25) and PWM brightness percentage tracking.
 
 Usage:
     python mock_esp32.py --port 5000
@@ -19,7 +19,7 @@ logger = logging.getLogger("MockESP32")
 # Global mock state
 current_count = 0
 current_brightness = 100
-num_leds = 10
+num_leds = 6
 
 
 class MockESP32Handler(BaseHTTPRequestHandler):
@@ -92,7 +92,7 @@ def main():
     server_address = ("127.0.0.1", args.port)
     httpd = HTTPServer(server_address, MockESP32Handler)
     logger.info(f"Mock ESP32 Server running on http://127.0.0.1:{args.port}")
-    logger.info("Endpoints available: GET /health, GET /status, GET /leds?count=0..10&brightness=0..100")
+    logger.info("Endpoints available: GET /health, GET /status, GET /leds?count=0..6&brightness=0..100")
     logger.info("Press Ctrl+C to stop.")
 
     try:

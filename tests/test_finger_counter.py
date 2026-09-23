@@ -48,62 +48,62 @@ def create_synthetic_hand(extended_fingers: list, handedness: str = "Right") -> 
 
 def create_thumbs_gesture_hand(gesture_type: str = "THUMBS_UP") -> dict:
     """Helper to generate a hand performing Thumbs Up or Thumbs Down."""
-    hand = create_synthetic_hand([])  # All 4 other fingers folded in
+    hand = create_synthetic_hand([])
     landmarks = hand["landmarks"]
 
-    landmarks[2] = {"x": 0.40, "y": 0.60, "z": 0.0} # Thumb MCP
+    landmarks[2] = {"x": 0.40, "y": 0.60, "z": 0.0}
 
     if gesture_type == "THUMBS_UP":
-        landmarks[4] = {"x": 0.40, "y": 0.40, "z": 0.0} # Thumb Tip pointing up (y=0.40 < 0.60)
+        landmarks[4] = {"x": 0.40, "y": 0.40, "z": 0.0}
     else:
-        landmarks[4] = {"x": 0.40, "y": 0.75, "z": 0.0} # Thumb Tip pointing down (y=0.75 > 0.60)
+        landmarks[4] = {"x": 0.40, "y": 0.75, "z": 0.0}
 
     return hand
 
 
 def test_count_fist():
-    counter = FingerCounter(max_leds=10)
+    counter = FingerCounter(max_leds=6)
     fist_hand = create_synthetic_hand([])
     res = counter.count_hand(fist_hand)
     assert res["count"] == 0
 
 
 def test_count_index_only():
-    counter = FingerCounter(max_leds=10)
+    counter = FingerCounter(max_leds=6)
     hand = create_synthetic_hand(["index"])
     res = counter.count_hand(hand)
     assert res["count"] == 1
 
 
 def test_count_open_palm():
-    counter = FingerCounter(max_leds=10)
+    counter = FingerCounter(max_leds=6)
     hand = create_synthetic_hand(["thumb", "index", "middle", "ring", "pinky"])
     res = counter.count_hand(hand)
     assert res["count"] == 5
 
 
-def test_count_10_fingers_two_hands():
-    counter = FingerCounter(max_leds=10)
+def test_count_two_hands_clamping():
+    counter = FingerCounter(max_leds=6)
     hand1 = create_synthetic_hand(["thumb", "index", "middle", "ring", "pinky"], "Right")
     hand2 = create_synthetic_hand(["thumb", "index", "middle", "ring", "pinky"], "Left")
 
     clamped_total, raw_total, hand_results, gesture_mode, brightness = counter.count_all([hand1, hand2])
     assert raw_total == 10
-    assert clamped_total == 10
+    assert clamped_total == 6  # Clamped to 6 physical LEDs!
 
 
 def test_thumbs_up_gesture():
-    counter = FingerCounter(max_leds=10)
+    counter = FingerCounter(max_leds=6)
     hand = create_thumbs_gesture_hand("THUMBS_UP")
     clamped_total, raw_total, hand_results, gesture_mode, brightness = counter.count_all([hand])
 
     assert gesture_mode == "THUMBS_UP"
-    assert clamped_total == 10
+    assert clamped_total == 6
     assert brightness == 100
 
 
 def test_thumbs_down_gesture():
-    counter = FingerCounter(max_leds=10)
+    counter = FingerCounter(max_leds=6)
     hand = create_thumbs_gesture_hand("THUMBS_DOWN")
     clamped_total, raw_total, hand_results, gesture_mode, brightness = counter.count_all([hand])
 
