@@ -26,10 +26,15 @@ STABILIZER_WINDOW_SIZE = 5  # Sliding history window size in frames
 STABILIZER_THRESHOLD = 3    # Minimum frame consensus needed to accept count change
 
 # Hardware & LED Mapping Configuration
-MAX_LEDS = 6                # Total physical LED channels supported on ESP32
+MAX_LEDS = 10               # Total physical LED channels supported (expanded to 10)
+DEFAULT_BRIGHTNESS = 100    # Default brightness percentage (0..100)
 ESP32_BASE_URL = "http://192.168.1.50"  # Microcontroller web server base URL
 REQUEST_TIMEOUT = 1.0       # HTTP GET request timeout in seconds
 MIN_COMMAND_INTERVAL = 0.2  # Minimum seconds between network commands
+
+# 2-Finger Brightness Pinch Distance Parameters (normalized coordinate distance)
+MIN_PINCH_DIST = 0.04       # 0% brightness distance
+MAX_PINCH_DIST = 0.28       # 100% brightness distance
 
 # Display Overlay Settings
 WINDOW_TITLE = "Hand Gesture Detection & LED Control (Class MVP)"

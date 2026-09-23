@@ -1,7 +1,8 @@
 """FingerCounter Module.
 
-Determines raised fingers per hand using deterministic MediaPipe 21-landmark geometry.
-Counts raw total across hands (0..10) and clamps the result to MAX_LEDS (0..6).
+Determines raised fingers per hand, special gestures (Thumbs Up / Thumbs Down),
+and 2-finger pinch distance brightness percentage tracking (0% to 100%).
+Supports up to 10 LED channels.
 """
 
 import math
@@ -17,7 +18,7 @@ def calculate_distance_2d(p1: dict, p2: dict) -> float:
 
 
 class FingerCounter:
-    """Calculates raised finger counts per hand and total clamped count."""
+    """Calculates raised finger counts, gestures, and brightness percentage."""
 
     # Official MediaPipe landmark indices
     WRIST = 0
@@ -46,15 +47,7 @@ class FingerCounter:
         self.max_leds = max_leds
 
     def is_thumb_raised(self, landmarks: list, handedness: str = "Right") -> bool:
-        """Determines if thumb is extended using joint distance and handedness.
-
-        Args:
-            landmarks: List of 21 landmark dicts [{"x", "y", "z"}, ...]
-            handedness: "Right" or "Left"
-
-        Returns:
-            bool: True if thumb is raised/extended.
-        """
+        """Determines if thumb is extended using joint distance and handedness."""
         if len(landmarks) < 21:
             return False
 
@@ -63,38 +56,21 @@ class FingerCounter:
         pinky_mcp = landmarks[self.PINKY_MCP]
         wrist = landmarks[self.WRIST]
 
-        # Primary rule: Distance from thumb tip to pinky MCP vs thumb IP to pinky MCP
         dist_tip_pinky = calculate_distance_2d(thumb_tip, pinky_mcp)
         dist_ip_pinky = calculate_distance_2d(thumb_ip, pinky_mcp)
 
-        # Secondary rule: Handedness-specific horizontal extension
         if handedness == "Right":
             is_extended_x = thumb_tip["x"] < thumb_ip["x"]
         else:
             is_extended_x = thumb_tip["x"] > thumb_ip["x"]
 
-        # Also check thumb tip height relative to wrist/CMC
         dist_tip_wrist = calculate_distance_2d(thumb_tip, wrist)
         dist_ip_wrist = calculate_distance_2d(thumb_ip, wrist)
 
-        # Thumb is raised if tip is extended away from palm & pinky MCP
         return (dist_tip_pinky > dist_ip_pinky) or (dist_tip_wrist > dist_ip_wrist and is_extended_x)
 
     def is_finger_raised(self, landmarks: list, tip_idx: int, pip_idx: int) -> bool:
-        """Determines if a non-thumb finger is raised.
-
-        Uses deterministic joint rule:
-        1. Vertical height comparison (tip.y < pip.y when hand is upright).
-        2. Distance from wrist comparison (dist(tip, wrist) > dist(pip, wrist)).
-
-        Args:
-            landmarks: List of 21 landmark dicts.
-            tip_idx: Index of fingertip landmark (8, 12, 16, 20).
-            pip_idx: Index of finger PIP joint landmark (6, 10, 14, 18).
-
-        Returns:
-            bool: True if finger is extended.
-        """
+        """Determines if a non-thumb finger is raised."""
         if len(landmarks) < 21:
             return False
 
@@ -102,36 +78,78 @@ class FingerCounter:
         pip = landmarks[pip_idx]
         wrist = landmarks[self.WRIST]
 
-        # Upright check: tip is higher (smaller y) than PIP
         upright_raised = tip["y"] < pip["y"]
-
-        # Distance check: tip is farther from wrist than PIP
         dist_tip_wrist = calculate_distance_2d(tip, wrist)
         dist_pip_wrist = calculate_distance_2d(pip, wrist)
-        distance_raised = dist_tip_wrist > dist_pip_wrist
 
-        return upright_raised and distance_raised
+        return upright_raised and (dist_tip_wrist > dist_pip_wrist)
 
-    def count_hand(self, hand_data: dict) -> dict:
-        """Counts raised fingers for a single detected hand.
-
-        Args:
-            hand_data: Dict with "landmarks" and "handedness".
+    def detect_thumbs_gesture(self, landmarks: list) -> str:
+        """Detects explicit Thumbs Up or Thumbs Down gesture.
 
         Returns:
-            dict: {
-                "count": int (0..5),
-                "details": {
-                    "thumb": bool, "index": bool, "middle": bool, "ring": bool, "pinky": bool
-                },
-                "handedness": str
-            }
+            str: "THUMBS_UP", "THUMBS_DOWN", or "NONE"
         """
+        if len(landmarks) < 21:
+            return "NONE"
+
+        thumb_tip = landmarks[self.THUMB_TIP]
+        thumb_mcp = landmarks[self.THUMB_MCP]
+
+        # Other 4 fingers must be folded into a fist
+        index_raised = self.is_finger_raised(landmarks, self.INDEX_TIP, self.INDEX_PIP)
+        middle_raised = self.is_finger_raised(landmarks, self.MIDDLE_TIP, self.MIDDLE_PIP)
+        ring_raised = self.is_finger_raised(landmarks, self.RING_TIP, self.RING_PIP)
+        pinky_raised = self.is_finger_raised(landmarks, self.PINKY_TIP, self.PINKY_PIP)
+
+        other_fingers_folded = not (index_raised or middle_raised or ring_raised or pinky_raised)
+
+        if other_fingers_folded:
+            # Thumbs Up: Thumb tip is significantly higher (smaller y) than MCP
+            if thumb_tip["y"] < thumb_mcp["y"] - 0.04:
+                return "THUMBS_UP"
+            # Thumbs Down: Thumb tip is significantly lower (larger y) than MCP
+            elif thumb_tip["y"] > thumb_mcp["y"] + 0.04:
+                return "THUMBS_DOWN"
+
+        return "NONE"
+
+    def calculate_2finger_brightness(self, landmarks: list) -> int:
+        """Calculates LED brightness percentage (0..100%) from 2-finger tip distance.
+
+        Args:
+            landmarks: 21 landmark dicts.
+
+        Returns:
+            int: Brightness percentage 0..100.
+        """
+        if len(landmarks) < 21:
+            return config.DEFAULT_BRIGHTNESS
+
+        # Measure distance between Index tip (8) and Thumb tip (4)
+        dist = calculate_distance_2d(landmarks[self.INDEX_TIP], landmarks[self.THUMB_TIP])
+
+        min_d = config.MIN_PINCH_DIST
+        max_d = config.MAX_PINCH_DIST
+
+        # Clamp distance and scale to 0..100%
+        clamped_dist = max(min_d, min(dist, max_d))
+        pct = int(((clamped_dist - min_d) / (max_d - min_d)) * 100)
+        return max(0, min(100, pct))
+
+    def count_hand(self, hand_data: dict) -> dict:
+        """Counts raised fingers and detects special gestures for a single hand."""
         landmarks = hand_data.get("landmarks", [])
         handedness = hand_data.get("handedness", "Right")
 
         if len(landmarks) < 21:
-            return {"count": 0, "details": {}, "handedness": handedness}
+            return {
+                "count": 0,
+                "details": {},
+                "handedness": handedness,
+                "gesture": "NONE",
+                "brightness": config.DEFAULT_BRIGHTNESS,
+            }
 
         thumb = self.is_thumb_raised(landmarks, handedness)
         index = self.is_finger_raised(landmarks, self.INDEX_TIP, self.INDEX_PIP)
@@ -148,29 +166,57 @@ class FingerCounter:
         }
         count = sum([thumb, index, middle, ring, pinky])
 
+        # Check special Thumbs Up / Thumbs Down gesture
+        thumbs_gesture = self.detect_thumbs_gesture(landmarks)
+
+        # Check 2-finger pinch distance brightness if exactly 2 fingers raised
+        brightness = config.DEFAULT_BRIGHTNESS
+        if count == 2:
+            brightness = self.calculate_2finger_brightness(landmarks)
+
         return {
             "count": count,
             "details": details,
             "handedness": handedness,
+            "gesture": thumbs_gesture,
+            "brightness": brightness,
         }
 
     def count_all(self, hands: list) -> tuple:
-        """Counts total raised fingers across all detected hands and clamps to max_leds.
-
-        Args:
-            hands: List of hand dictionaries from HandDetector.
+        """Counts total raised fingers (0..10), evaluates special gestures, and tracks brightness.
 
         Returns:
-            tuple: (clamped_total: int, raw_total: int, hand_results: list)
+            tuple: (clamped_total: int, raw_total: int, hand_results: list, gesture_mode: str, brightness: int)
         """
         hand_results = []
         raw_total = 0
+        active_gesture = "NONE"
+        detected_brightness = config.DEFAULT_BRIGHTNESS
+        has_2finger_brightness = False
 
         for hand in hands:
             res = self.count_hand(hand)
             hand_results.append(res)
             raw_total += res["count"]
 
-        # Clamp raw total (0..10) to max LED channels (0..6)
-        clamped_total = min(raw_total, self.max_leds)
-        return clamped_total, raw_total, hand_results
+            if res["gesture"] in ["THUMBS_UP", "THUMBS_DOWN"]:
+                active_gesture = res["gesture"]
+
+            if res["count"] == 2:
+                detected_brightness = res["brightness"]
+                has_2finger_brightness = True
+
+        # Mode overrides
+        if active_gesture == "THUMBS_UP":
+            clamped_total = self.max_leds  # All 10 LEDs ON
+            final_brightness = 100
+        elif active_gesture == "THUMBS_DOWN":
+            clamped_total = 0              # All 10 LEDs OFF
+            final_brightness = 0
+        else:
+            clamped_total = min(raw_total, self.max_leds)
+            final_brightness = detected_brightness if has_2finger_brightness else config.DEFAULT_BRIGHTNESS
+            if has_2finger_brightness:
+                active_gesture = "BRIGHTNESS_CONTROL"
+
+        return clamped_total, raw_total, hand_results, active_gesture, final_brightness

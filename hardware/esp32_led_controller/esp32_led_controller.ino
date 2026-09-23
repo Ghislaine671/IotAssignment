@@ -1,14 +1,14 @@
 /*
- * ESP32 LED Controller Web Server
+ * ESP32 LED Controller Web Server with PWM Brightness Support
  * 
  * Class Assignment MVP: Hand Gesture Detection & LED Control System
- * Hardware Target: ESP32 Microcontroller + 6 LED Channels
+ * Hardware Target: ESP32 Microcontroller + 10 LED Channels
  * Protocol: HTTP GET Server over Wi-Fi
  *
  * Endpoints:
- *   - GET /health      : System health check
- *   - GET /status      : Current LED state and Wi-Fi network status
- *   - GET /leds?count=N: Set first N LEDs ON (N in 0..6), remaining OFF
+ *   - GET /health                  : System health check
+ *   - GET /status                  : Current LED state array, brightness %, & network status
+ *   - GET /leds?count=N&brightness=B: Set first N LEDs ON (N in 0..10) with brightness B (0..100%)
  */
 
 #include <WiFi.h>
@@ -21,28 +21,40 @@ const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 const int HTTP_PORT = 80;
 WebServer server(HTTP_PORT);
 
-// Physical ESP32 GPIO Pin definitions for 6 LED Channels
-const int NUM_LEDS = 6;
-const int LED_PINS[NUM_LEDS] = {13, 12, 14, 27, 26, 25};
+// Physical ESP32 GPIO Pin definitions for 10 LED Channels
+const int NUM_LEDS = 10;
+const int LED_PINS[NUM_LEDS] = {13, 12, 14, 27, 26, 25, 33, 32, 15, 4};
 
 // System State
 int currentLedCount = 0;
-bool currentLedStates[NUM_LEDS] = {false, false, false, false, false, false};
+int currentBrightness = 100; // Percentage 0..100
+bool currentLedStates[NUM_LEDS] = {false};
 
 // ======================= HELPER FUNCTIONS =======================
-void updateLedHardware(int count) {
+void updateLedHardware(int count, int brightnessPct) {
   currentLedCount = count;
+  currentBrightness = brightnessPct;
+
+  // Convert 0..100% brightness to 0..255 PWM duty cycle
+  int pwmValue = (brightnessPct * 255) / 100;
+
   for (int i = 0; i < NUM_LEDS; i++) {
     bool state = (i < count);
     currentLedStates[i] = state;
-    digitalWrite(LED_PINS[i], state ? HIGH : LOW);
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+    analogWrite(LED_PINS[i], state ? pwmValue : 0);
+#else
+    // Fallback digital write or analog write depending on core version
+    digitalWrite(LED_PINS[i], state ? (pwmValue > 128 ? HIGH : LOW) : LOW);
+#endif
   }
 }
 
-String buildJsonStatus(bool ok, int count, const String& extraMsg = "") {
+String buildJsonStatus(bool ok, int count, int brightness, const String& extraMsg = "") {
   String json = "{";
   json += "\"ok\":" + String(ok ? "true" : "false") + ",";
   json += "\"count\":" + String(count) + ",";
+  json += "\"brightness\":" + String(brightness) + ",";
   json += "\"leds\":[";
   for (int i = 0; i < NUM_LEDS; i++) {
     json += String(currentLedStates[i] ? "1" : "0");
@@ -63,7 +75,7 @@ void handleHealth() {
 }
 
 void handleStatus() {
-  String json = buildJsonStatus(true, currentLedCount);
+  String json = buildJsonStatus(true, currentLedCount, currentBrightness);
   server.send(200, "application/json", json);
 }
 
@@ -76,21 +88,25 @@ void handleLeds() {
   String countStr = server.arg("count");
   int countVal = countStr.toInt();
 
-  // Validate integer string conversion & range
-  if (countStr != "0" && countVal == 0) { // Handles invalid non-numeric string
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Parameter 'count' must be a valid integer\"}");
-    return;
+  int brightnessVal = 100;
+  if (server.hasArg("brightness")) {
+    brightnessVal = server.arg("brightness").toInt();
   }
 
   if (countVal < 0 || countVal > NUM_LEDS) {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Count must be between 0 and 6\"}");
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Count must be between 0 and 10\"}");
     return;
   }
 
-  // Update physical GPIO outputs
-  updateLedHardware(countVal);
+  if (brightnessVal < 0 || brightnessVal > 100) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Brightness must be between 0 and 100\"}");
+    return;
+  }
 
-  String json = buildJsonStatus(true, countVal);
+  // Update physical GPIO PWM outputs
+  updateLedHardware(countVal, brightnessVal);
+
+  String json = buildJsonStatus(true, countVal, brightnessVal);
   server.send(200, "application/json", json);
 }
 
@@ -103,15 +119,13 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  Serial.println("\n=== ESP32 Hand Gesture LED Controller ===");
+  Serial.println("\n=== ESP32 Hand Gesture 10-LED & Brightness Controller ===");
 
-  // Initialize LED GPIO pins as outputs
   for (int i = 0; i < NUM_LEDS; i++) {
     pinMode(LED_PINS[i], OUTPUT);
     digitalWrite(LED_PINS[i], LOW);
   }
 
-  // Connect to Wi-Fi
   Serial.print("Connecting to Wi-Fi SSID: ");
   Serial.println(WIFI_SSID);
   WiFi.mode(WIFI_STA);
@@ -126,7 +140,6 @@ void setup() {
   Serial.print("ESP32 IP Address: ");
   Serial.println(WiFi.localIP());
 
-  // Register Web Server URI Handlers
   server.on("/health", HTTP_GET, handleHealth);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/leds", HTTP_GET, handleLeds);

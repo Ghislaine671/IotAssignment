@@ -1,4 +1,4 @@
-"""Main Application Entry Point: Hand Gesture Detection and LED Control System.
+"""Main Application Entry Point: Hand Gesture Detection, Gesture Recognition & LED Control System.
 
 Orchestrates CameraManager, HandDetector, FingerCounter, GestureStabilizer,
 MicrocontrollerClient, and DisplayOverlay in a synchronous video processing loop.
@@ -77,7 +77,7 @@ def main():
         run_camera_test(args.camera_index)
         return
 
-    logger.info("Starting Hand Gesture Detection and LED Control System...")
+    logger.info("Starting Hand Gesture Detection, Gesture Recognition & LED Control System...")
     logger.info(f"Target ESP32 URL: {args.esp32_url}")
     logger.info(f"Max Hands: {config.MAX_HANDS}, Max LEDs: {config.MAX_LEDS}")
 
@@ -111,19 +111,22 @@ def main():
             # 1. Process frame with MediaPipe HandLandmarker Tasks API
             hands = detector.process(frame, timestamp_ms=timestamp_ms)
 
-            # 2. Calculate finger count per hand and total raw count (0..10)
-            clamped_count, raw_count, hand_results = finger_counter.count_all(hands)
+            # 2. Calculate finger count (0..10), gestures (Thumbs Up/Down), and 2-finger brightness
+            clamped_count, raw_count, hand_results, gesture_mode, raw_brightness = finger_counter.count_all(hands)
 
-            # 3. Apply 5-frame sliding window stabilization
-            stable_count = stabilizer.update(clamped_count)
+            # 3. Apply 5-frame sliding window stabilization for count and brightness
+            stable_count, stable_brightness = stabilizer.update(clamped_count, raw_brightness)
 
-            # 4. Hardware Command Dispatch: Only send GET request when stable count changes!
-            if stable_count != mcu_client.last_sent_count:
-                logger.info(f"Stable gesture changed from {mcu_client.last_sent_count} to {stable_count}")
-                mcu_client.set_led_count(stable_count)
+            # 4. Hardware Command Dispatch: Send GET request when count OR brightness changes!
+            if stable_count != mcu_client.last_sent_count or stable_brightness != mcu_client.last_sent_brightness:
+                logger.info(
+                    f"State change -> Count: {mcu_client.last_sent_count} -> {stable_count}, "
+                    f"Brightness: {mcu_client.last_sent_brightness}% -> {stable_brightness}%"
+                )
+                mcu_client.set_led_count(count=stable_count, brightness=stable_brightness)
 
             # 5. Render Visual HUD Overlay
-            overlay.render(frame, hands, raw_count, stable_count, hand_results, mcu_client)
+            overlay.render(frame, hands, raw_count, stable_count, gesture_mode, stable_brightness, hand_results, mcu_client)
 
             # 6. Display Video Frame
             cv2.imshow(config.WINDOW_TITLE, frame)
