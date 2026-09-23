@@ -43,35 +43,37 @@ class FingerCounter:
     PINKY_PIP = 18
     PINKY_MCP = 17
 
-    def __init__(self, max_leds: int = config.MAX_LEDS):
+    def __init__(self, max_leds: int = config.MAX_LEDS, thumb_sensitivity: float = config.THUMB_SENSITIVITY):
         self.max_leds = max_leds
+        self.thumb_sensitivity = thumb_sensitivity
 
     def is_thumb_raised(self, landmarks: list, handedness: str = "Right") -> bool:
-        """Determines if thumb is extended away from palm."""
+        """Determines if thumb is extended using anatomical palm-center distance ratio."""
         if len(landmarks) < 21:
             return False
 
         thumb_tip = landmarks[self.THUMB_TIP]    # 4
-        thumb_ip = landmarks[self.THUMB_IP]      # 3
+        thumb_mcp = landmarks[self.THUMB_MCP]    # 2
+        middle_mcp = landmarks[self.MIDDLE_MCP]  # 9 (Anatomical Palm Center)
         index_mcp = landmarks[self.INDEX_MCP]    # 5
-        pinky_mcp = landmarks[self.PINKY_MCP]    # 17
         wrist = landmarks[self.WRIST]            # 0
 
-        # Palm reference size (Index MCP to Wrist)
-        palm_size = calculate_distance_2d(index_mcp, wrist)
-        if palm_size == 0:
+        # Distance from Thumb Tip (4) to Palm Center (Middle MCP 9)
+        dist_tip_palm = calculate_distance_2d(thumb_tip, middle_mcp)
+        # Reference distance from Thumb MCP (2) to Palm Center (Middle MCP 9)
+        dist_mcp_palm = calculate_distance_2d(thumb_mcp, middle_mcp)
+
+        if dist_mcp_palm == 0:
             return False
 
-        # Distance from Thumb Tip (4) to Index MCP (5)
-        thumb_index_dist = calculate_distance_2d(thumb_tip, index_mcp)
-        spread_ratio = thumb_index_dist / palm_size
+        # Palm-Center Ratio: Extended thumb reaches AWAY from palm center
+        ratio = dist_tip_palm / dist_mcp_palm
 
-        # Distance from Thumb Tip to Pinky MCP vs Thumb IP to Pinky MCP
-        dist_tip_pinky = calculate_distance_2d(thumb_tip, pinky_mcp)
-        dist_ip_pinky = calculate_distance_2d(thumb_ip, pinky_mcp)
+        # Secondary check: Spread distance relative to palm size
+        palm_size = calculate_distance_2d(index_mcp, wrist)
+        spread_ratio = calculate_distance_2d(thumb_tip, index_mcp) / palm_size if palm_size > 0 else 0
 
-        # Thumb is raised ONLY if spread_ratio >= 0.80 AND tip is extended relative to pinky MCP
-        return (spread_ratio >= 0.80) and (dist_tip_pinky > dist_ip_pinky * 1.05)
+        return (ratio >= self.thumb_sensitivity) and (spread_ratio >= 0.70)
 
     def is_finger_raised(self, landmarks: list, tip_idx: int, pip_idx: int) -> bool:
         """Determines if a non-thumb finger is raised."""
@@ -89,18 +91,13 @@ class FingerCounter:
         return upright_raised and (dist_tip_wrist > dist_pip_wrist)
 
     def detect_thumbs_gesture(self, landmarks: list) -> str:
-        """Detects explicit Thumbs Up or Thumbs Down gesture.
-
-        Returns:
-            str: "THUMBS_UP", "THUMBS_DOWN", or "NONE"
-        """
+        """Detects explicit Thumbs Up or Thumbs Down gesture."""
         if len(landmarks) < 21:
             return "NONE"
 
         thumb_tip = landmarks[self.THUMB_TIP]
         thumb_mcp = landmarks[self.THUMB_MCP]
 
-        # Other 4 fingers must be folded into a fist
         index_raised = self.is_finger_raised(landmarks, self.INDEX_TIP, self.INDEX_PIP)
         middle_raised = self.is_finger_raised(landmarks, self.MIDDLE_TIP, self.MIDDLE_PIP)
         ring_raised = self.is_finger_raised(landmarks, self.RING_TIP, self.RING_PIP)
@@ -109,34 +106,23 @@ class FingerCounter:
         other_fingers_folded = not (index_raised or middle_raised or ring_raised or pinky_raised)
 
         if other_fingers_folded:
-            # Thumbs Up: Thumb tip is significantly higher (smaller y) than MCP
             if thumb_tip["y"] < thumb_mcp["y"] - 0.04:
                 return "THUMBS_UP"
-            # Thumbs Down: Thumb tip is significantly lower (larger y) than MCP
             elif thumb_tip["y"] > thumb_mcp["y"] + 0.04:
                 return "THUMBS_DOWN"
 
         return "NONE"
 
     def calculate_2finger_brightness(self, landmarks: list) -> int:
-        """Calculates LED brightness percentage (0..100%) from 2-finger tip distance.
-
-        Args:
-            landmarks: 21 landmark dicts.
-
-        Returns:
-            int: Brightness percentage 0..100.
-        """
+        """Calculates LED brightness percentage (0..100%) from 2-finger tip distance."""
         if len(landmarks) < 21:
             return config.DEFAULT_BRIGHTNESS
 
-        # Measure distance between Index tip (8) and Thumb tip (4)
         dist = calculate_distance_2d(landmarks[self.INDEX_TIP], landmarks[self.THUMB_TIP])
 
         min_d = config.MIN_PINCH_DIST
         max_d = config.MAX_PINCH_DIST
 
-        # Clamp distance and scale to 0..100%
         clamped_dist = max(min_d, min(dist, max_d))
         pct = int(((clamped_dist - min_d) / (max_d - min_d)) * 100)
         return max(0, min(100, pct))
@@ -170,10 +156,8 @@ class FingerCounter:
         }
         count = sum([thumb, index, middle, ring, pinky])
 
-        # Check special Thumbs Up / Thumbs Down gesture
         thumbs_gesture = self.detect_thumbs_gesture(landmarks)
 
-        # Check 2-finger pinch distance brightness if exactly 2 fingers raised
         brightness = config.DEFAULT_BRIGHTNESS
         if count == 2:
             brightness = self.calculate_2finger_brightness(landmarks)
@@ -187,11 +171,7 @@ class FingerCounter:
         }
 
     def count_all(self, hands: list) -> tuple:
-        """Counts total raised fingers (0..10), evaluates special gestures, and tracks brightness.
-
-        Returns:
-            tuple: (clamped_total: int, raw_total: int, hand_results: list, gesture_mode: str, brightness: int)
-        """
+        """Counts total raised fingers (0..10), evaluates special gestures, and tracks brightness."""
         hand_results = []
         raw_total = 0
         active_gesture = "NONE"
@@ -210,12 +190,11 @@ class FingerCounter:
                 detected_brightness = res["brightness"]
                 has_2finger_brightness = True
 
-        # Mode overrides
         if active_gesture == "THUMBS_UP":
-            clamped_total = self.max_leds  # All 10 LEDs ON
+            clamped_total = self.max_leds
             final_brightness = 100
         elif active_gesture == "THUMBS_DOWN":
-            clamped_total = 0              # All 10 LEDs OFF
+            clamped_total = 0
             final_brightness = 0
         else:
             clamped_total = min(raw_total, self.max_leds)

@@ -32,6 +32,9 @@ ESP32_BASE_URL = "http://192.168.1.50"  # Microcontroller web server base URL
 REQUEST_TIMEOUT = 1.0       # HTTP GET request timeout in seconds
 MIN_COMMAND_INTERVAL = 0.2  # Minimum seconds between network commands
 
+# Thumb Extension Sensitivity (Ratio of Thumb Tip to Palm Center dist vs Thumb MCP to Palm Center dist)
+THUMB_SENSITIVITY = 1.20    # Default 1.20 ratio threshold (higher = less sensitive, lower = more sensitive)
+
 # 2-Finger Brightness Pinch Distance Parameters (normalized coordinate distance)
 MIN_PINCH_DIST = 0.04       # 0% brightness distance
 MAX_PINCH_DIST = 0.28       # 100% brightness distance

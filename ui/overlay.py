@@ -1,7 +1,7 @@
 """DisplayOverlay Module.
 
 Draws MediaPipe 21-landmark nodes, hand skeleton connections, per-hand counts,
-raw total count, clamped stable count (10 LEDs), gesture mode badges,
+detailed per-finger breakdown badges [T I M R P], gesture mode badges,
 and Brightness Percentage progress bar (0..100%) on the OpenCV preview.
 """
 
@@ -45,7 +45,7 @@ class DisplayOverlay:
                 cv2.circle(frame, pt, radius, color, -1)
 
     def draw_hud(self, frame, raw_count: int, stable_count: int, gesture_mode: str, brightness: int, hand_results: list, mcu_client):
-        """Draws top status banner, gesture badges, brightness bar, and MCU status."""
+        """Draws top status banner, gesture badges, brightness bar, per-finger breakdown, and MCU status."""
         h, w, _ = frame.shape
 
         # Top semi-transparent HUD background bar
@@ -99,19 +99,30 @@ class DisplayOverlay:
         last_cmd = f"Last Sent: /leds?count={c_sent}&brightness={b_sent}"
         cv2.putText(frame, last_cmd, (w - 380, 58), self.font, 0.45, (200, 200, 200), 1)
 
-        # Per-hand count boxes (bottom-left overlay)
-        card_y = h - 60
+        # Per-hand detailed cards with [T I M R P] finger status (bottom-left overlay)
+        card_y = h - 70
         for idx, hand_res in enumerate(hand_results):
             handedness = hand_res.get("handedness", f"Hand {idx+1}")
             cnt = hand_res.get("count", 0)
-            gst = hand_res.get("gesture", "NONE")
-            card_text = f"{handedness}: {cnt} f"
-            if gst != "NONE":
-                card_text += f" ({gst})"
+            details = hand_res.get("details", {})
 
-            cv2.rectangle(frame, (15 + idx * 220, card_y), (215 + idx * 220, card_y + 45), (30, 30, 40), -1)
-            cv2.rectangle(frame, (15 + idx * 220, card_y), (215 + idx * 220, card_y + 45), (0, 255, 255), 1)
-            cv2.putText(frame, card_text, (25 + idx * 220, card_y + 28), self.font, 0.5, (255, 255, 255), 2)
+            # Format per-finger breakdown string
+            t = "1" if details.get("thumb") else "0"
+            i = "1" if details.get("index") else "0"
+            m = "1" if details.get("middle") else "0"
+            r = "1" if details.get("ring") else "0"
+            p = "1" if details.get("pinky") else "0"
+
+            line1 = f"{handedness} Hand: {cnt} fingers"
+            line2 = f"[T:{t} I:{i} M:{m} R:{r} P:{p}]"
+
+            card_x1 = 15 + idx * 260
+            card_x2 = 255 + idx * 260
+
+            cv2.rectangle(frame, (card_x1, card_y), (card_x2, card_y + 55), (30, 30, 40), -1)
+            cv2.rectangle(frame, (card_x1, card_y), (card_x2, card_y + 55), (0, 255, 255), 1)
+            cv2.putText(frame, line1, (card_x1 + 10, card_y + 22), self.font, 0.5, (255, 255, 255), 2)
+            cv2.putText(frame, line2, (card_x1 + 10, card_y + 44), self.font, 0.45, (0, 255, 255), 1)
 
     def render(self, frame, hands: list, raw_count: int, stable_count: int, gesture_mode: str, brightness: int, hand_results: list, mcu_client):
         """Complete overlay drawing pipeline."""
