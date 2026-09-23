@@ -1,0 +1,22 @@
+# Python Virtual Environments & Pycache
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Runtime downloaded model assets
+assets/models/*.task
+!assets/models/.gitkeep
